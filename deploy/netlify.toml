@@ -1,0 +1,100 @@
+[build]
+  # Build command
+  command = "npm run build"
+  
+  # Publish directory
+  publish = "build"
+  
+  # Functions directory (for serverless functions)
+  functions = "netlify/functions"
+
+[build.environment]
+  # Node.js version
+  NODE_VERSION = "18"
+
+# Redirects for MCP endpoints
+[[redirects]]
+  from = "/mcp"
+  to = "/.netlify/functions/mcp-server"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/events"
+  to = "/.netlify/functions/sse-server"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/webhook"
+  to = "/.netlify/functions/webhook-handler"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/health-check"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/client/*"
+  to = "/.netlify/functions/client-handler"
+  status = 200
+  force = true
+
+# Headers for security and CORS
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+
+# CORS headers for MCP endpoints
+[[headers]]
+  for = "/mcp"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization, mcp-session-id"
+
+[[headers]]
+  for = "/events"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization, mcp-session-id"
+    Cache-Control = "no-cache"
+    Connection = "keep-alive"
+
+[[headers]]
+  for = "/webhook"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+
+# Environment variables (these will be set in Netlify dashboard)
+[context.production.environment]
+  NODE_ENV = "production"
+  ENABLE_SSE = "true"
+  SSE_PORT = "3000"
+  ENABLE_STDIO = "true"
+  DOCUMENT_SUPPORT = "true"
+
+[context.deploy-preview.environment]
+  NODE_ENV = "preview"
+  ENABLE_SSE = "true"
+  SSE_PORT = "3000"
+  ENABLE_STDIO = "true"
+  DOCUMENT_SUPPORT = "true"
+
+[context.branch-deploy.environment]
+  NODE_ENV = "development"
+  ENABLE_SSE = "true"
+  SSE_PORT = "3000"
+  ENABLE_STDIO = "true"
+  DOCUMENT_SUPPORT = "true" 

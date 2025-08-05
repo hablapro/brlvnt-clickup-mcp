@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "build/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/health",
+      "dest": "/build/index.js"
+    },
+    {
+      "src": "/mcp",
+      "dest": "/build/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/build/index.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "build/index.js": {
+      "maxDuration": 30
+    }
+  }
+} 

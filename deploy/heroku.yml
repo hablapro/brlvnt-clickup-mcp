@@ -1,0 +1,7 @@
+build:
+  docker:
+    web: Dockerfile
+    client: Dockerfile.client
+run:
+  web: npm start
+  client: node build/client/index.js 
