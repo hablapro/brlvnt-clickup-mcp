@@ -33,6 +33,14 @@ async function configureServerOnce() {
 
 exports.handler = async (event, context) => {
   try {
+    // Debug environment variables
+    console.log('Environment variables check:', {
+      hasClickUpApiKey: !!process.env.CLICKUP_API_KEY,
+      hasClickUpTeamId: !!process.env.CLICKUP_TEAM_ID,
+      clickUpApiKeyLength: process.env.CLICKUP_API_KEY ? process.env.CLICKUP_API_KEY.length : 0,
+      clickUpTeamId: process.env.CLICKUP_TEAM_ID
+    });
+    
     await configureServerOnce();
 
     // Handle CORS preflight requests
