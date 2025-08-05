@@ -5,9 +5,15 @@
  * Netlify Function for SSE Server
  */
 
-const { createSSEServer } = require('../../build/sse_server.js');
+// Dynamic import for ES modules
+let createSSEServer;
 
 exports.handler = async (event, context) => {
+  // Import ES module dynamically
+  if (!createSSEServer) {
+    const sseModule = await import('../../build/sse_server.js');
+    createSSEServer = sseModule.createSSEServer;
+  }
   try {
     // Handle CORS preflight requests
     if (event.httpMethod === 'OPTIONS') {
