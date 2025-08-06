@@ -124,6 +124,9 @@ const handlers = {
 };
 
 exports.handler = async (event, context) => {
+  let body;
+  let id;
+  
   try {
     // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
@@ -140,8 +143,9 @@ exports.handler = async (event, context) => {
     }
     
     // Parse request
-    const body = JSON.parse(event.body || '{}');
-    const { method, params, id } = body;
+    body = JSON.parse(event.body || '{}');
+    const { method, params } = body;
+    id = body.id;
     
     console.log('MCP Request:', { method, id });
     
@@ -183,7 +187,7 @@ exports.handler = async (event, context) => {
           code: -32603,
           message: error.message || "Internal server error"
         },
-        id: body?.id || null
+        id: id || null
       })
     };
   }
