@@ -127,17 +127,22 @@ exports.handler = async (event, context) => {
         break;
         
       case "tools/list":
+      case "list_tools":
+      case "listTools":
         result = { tools };
         break;
         
       case "tools/call":
-        const { name, arguments: args } = params;
+      case "tool/execute":
+      case "execute":
+        const toolName = params.name || params.tool || params.toolName;
+        const toolArgs = params.arguments || params.args || params.input || {};
         
         if (!CLICKUP_API_KEY || !CLICKUP_TEAM_ID) {
           throw new Error("ClickUp API credentials not configured");
         }
         
-        switch (name) {
+        switch (toolName) {
           case "get_workspace_hierarchy":
             result = {
               content: [{
@@ -158,7 +163,8 @@ exports.handler = async (event, context) => {
                     }
                   ]
                 }, null, 2)
-              }]
+              }],
+              isError: false
             };
             break;
             
@@ -168,20 +174,40 @@ exports.handler = async (event, context) => {
                 type: "text",
                 text: JSON.stringify({
                   id: `task_${Date.now()}`,
-                  name: args.name,
-                  listId: args.listId,
+                  name: toolArgs.name,
+                  listId: toolArgs.listId,
                   created: new Date().toISOString()
                 }, null, 2)
-              }]
+              }],
+              isError: false
             };
             break;
             
           default:
-            throw new Error(`Unknown tool: ${name}`);
+            throw new Error(`Unknown tool: ${toolName}`);
         }
         break;
         
+      case "describe":
+      case "discovery":
+      case "capabilities":
+        result = {
+          name: "clickup-mcp-server",
+          version: "0.8.5",
+          protocolVersion: "2024-11-05",
+          capabilities: {
+            tools: {
+              list: true,
+              execute: true
+            }
+          },
+          tools: tools
+        };
+        break;
+        
       default:
+        // Log unknown method for debugging
+        console.log(`Unknown method: ${method}, full request:`, JSON.stringify(body));
         throw new Error(`Unknown method: ${method}`);
     }
     
@@ -201,12 +227,23 @@ exports.handler = async (event, context) => {
     
   } catch (error) {
     console.error('MCP Error:', error);
+    console.error('Request was:', JSON.stringify(event.body));
+    
+    // Try to get ID from parsed body or raw body
+    let errorId = null;
+    try {
+      const parsedBody = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+      errorId = parsedBody?.id || null;
+    } catch (e) {
+      // Ignore parse errors
+    }
     
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, mcp-session-id, x-session-id, accept'
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
@@ -214,7 +251,7 @@ exports.handler = async (event, context) => {
           code: -32603,
           message: error.message || "Internal server error"
         },
-        id: body?.id || null
+        id: errorId
       })
     };
   }
