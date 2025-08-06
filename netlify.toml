@@ -49,6 +49,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/mcp-sse"
+  to = "/.netlify/functions/mcp-sse"
+  status = 200
+  force = true
+
 # Headers for security and CORS
 [[headers]]
   for = "/*"
