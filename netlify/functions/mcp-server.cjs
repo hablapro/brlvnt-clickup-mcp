@@ -16,22 +16,42 @@ let transports = {};
 
 async function configureServerOnce() {
   if (!isConfigured) {
-    // Dynamic import for ES modules
-    if (!configureServer) {
-      const serverModule = await import('../../build/server.js');
-      configureServer = serverModule.configureServer;
-      server = serverModule.server;
+    try {
+      console.log('Starting server configuration...');
       
-      const sdkModule = await import('@modelcontextprotocol/sdk/server/http.js');
-      StreamableHTTPServerTransport = sdkModule.StreamableHTTPServerTransport;
+      // Dynamic import for ES modules
+      if (!configureServer) {
+        console.log('Loading server module...');
+        const serverModule = await import('../../build/server.js');
+        console.log('Server module loaded successfully');
+        configureServer = serverModule.configureServer;
+        server = serverModule.server;
+        
+        console.log('Loading SDK module...');
+        const sdkModule = await import('@modelcontextprotocol/sdk/server/http.js');
+        console.log('SDK module loaded successfully');
+        StreamableHTTPServerTransport = sdkModule.StreamableHTTPServerTransport;
+      }
+      
+      console.log('Calling configureServer()...');
+      configureServer();
+      console.log('Server configured successfully');
+      isConfigured = true;
+    } catch (error) {
+      console.error('Error in configureServerOnce:', error);
+      console.error('Error stack:', error.stack);
+      throw error;
     }
-    
-    configureServer();
-    isConfigured = true;
   }
 }
 
 exports.handler = async (event, context) => {
+  console.log('MCP Server Handler Started');
+  console.log('Request method:', event.httpMethod);
+  console.log('Request path:', event.path);
+  console.log('Request headers:', JSON.stringify(event.headers));
+  console.log('Request body:', event.body);
+  
   try {
     // Debug environment variables
     console.log('Environment variables check:', {
@@ -41,7 +61,9 @@ exports.handler = async (event, context) => {
       clickUpTeamId: process.env.CLICKUP_TEAM_ID
     });
     
+    console.log('Attempting to configure server...');
     await configureServerOnce();
+    console.log('Server configured successfully');
 
     // Handle CORS preflight requests
     if (event.httpMethod === 'OPTIONS') {
@@ -119,6 +141,9 @@ exports.handler = async (event, context) => {
 
   } catch (error) {
     console.error('Error handling MCP request:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
     
     return {
       statusCode: 500,
