@@ -66,6 +66,15 @@ const tools = [
     }
   },
   {
+    name: "get_workspace_summary",
+    description: "Get a human-readable summary of the workspace structure",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  },
+  {
     name: "create_task",
     description: "Create a new task in ClickUp",
     inputSchema: {
@@ -289,6 +298,82 @@ exports.handler = async (event, context) => {
                 content: [{
                   type: "text", 
                   text: `Error fetching workspace hierarchy: ${error.message}`
+                }],
+                isError: true
+              };
+            }
+            break;
+            
+          case "get_workspace_summary":
+            try {
+              console.log('Generating workspace summary for team:', CLICKUP_TEAM_ID);
+              const spacesResponse = await makeClickUpRequest(`/api/v2/team/${CLICKUP_TEAM_ID}/space`);
+              
+              let summary = `# ClickUp Workspace Summary\n\n`;
+              summary += `**Team ID:** ${CLICKUP_TEAM_ID}\n`;
+              summary += `**Total Spaces:** ${spacesResponse.spaces?.length || 0}\n\n`;
+              
+              if (spacesResponse.spaces) {
+                for (const space of spacesResponse.spaces) {
+                  summary += `## 📁 ${space.name} (ID: ${space.id})\n\n`;
+                  
+                  // Count totals
+                  let totalFolders = 0;
+                  let totalLists = 0;
+                  
+                  // Get folders
+                  try {
+                    const foldersResponse = await makeClickUpRequest(`/api/v2/space/${space.id}/folder`);
+                    if (foldersResponse.folders) {
+                      totalFolders = foldersResponse.folders.length;
+                      
+                      for (const folder of foldersResponse.folders) {
+                        summary += `### 📂 ${folder.name}\n`;
+                        if (folder.lists) {
+                          folder.lists.forEach(list => {
+                            summary += `   - 📋 ${list.name} (ID: ${list.id})\n`;
+                            totalLists++;
+                          });
+                        }
+                        summary += '\n';
+                      }
+                    }
+                  } catch (error) {
+                    summary += `   ⚠️ Could not fetch folders: ${error.message}\n\n`;
+                  }
+                  
+                  // Get direct lists
+                  try {
+                    const listsResponse = await makeClickUpRequest(`/api/v2/space/${space.id}/list`);
+                    if (listsResponse.lists && listsResponse.lists.length > 0) {
+                      summary += `### 📋 Direct Lists:\n`;
+                      listsResponse.lists.forEach(list => {
+                        summary += `   - ${list.name} (ID: ${list.id})\n`;
+                        totalLists++;
+                      });
+                      summary += '\n';
+                    }
+                  } catch (error) {
+                    summary += `   ⚠️ Could not fetch lists: ${error.message}\n\n`;
+                  }
+                  
+                  summary += `**Space Summary:** ${totalFolders} folders, ${totalLists} lists\n\n`;
+                  summary += `---\n\n`;
+                }
+              }
+              
+              result = {
+                content: [{
+                  type: "text",
+                  text: summary
+                }]
+              };
+            } catch (error) {
+              console.error('Error generating workspace summary:', error);
+              result = {
+                content: [{
+                  type: "text", 
+                  text: `Error generating workspace summary: ${error.message}`
                 }],
                 isError: true
               };
