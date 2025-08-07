@@ -55,6 +55,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/mcp-n8n-compat"
+  to = "/.netlify/functions/mcp-n8n-compatible"
+  status = 200
+  force = true
+
 # Headers for security and CORS
 [[headers]]
   for = "/*"
