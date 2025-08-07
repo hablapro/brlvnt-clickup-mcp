@@ -3,8 +3,51 @@
  * This handles both regular HTTP requests and SSE connections
  */
 
+const https = require('https');
+
 const CLICKUP_API_KEY = process.env.CLICKUP_API_KEY;
 const CLICKUP_TEAM_ID = process.env.CLICKUP_TEAM_ID;
+
+// Helper function to make ClickUp API requests
+function makeClickUpRequest(path, method = 'GET', data = null) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'api.clickup.com',
+      port: 443,
+      path: path,
+      method: method,
+      headers: {
+        'Authorization': CLICKUP_API_KEY,
+        'Content-Type': 'application/json'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(body);
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(result);
+          } else {
+            reject(new Error(`ClickUp API error: ${result.err || result.error || body}`));
+          }
+        } catch (e) {
+          reject(new Error(`Failed to parse response: ${body}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    
+    if (data) {
+      req.write(JSON.stringify(data));
+    }
+    
+    req.end();
+  });
+}
 
 // Simple session ID generator
 function generateSessionId() {
@@ -166,41 +209,145 @@ exports.handler = async (event, context) => {
         
         switch (toolName) {
           case "get_workspace_hierarchy":
-            result = {
-              content: [{
-                type: "text",
-                text: JSON.stringify({
-                  teamId: CLICKUP_TEAM_ID,
-                  spaces: [
-                    {
-                      id: "space_1",
-                      name: "Test Space",
-                      folders: [],
-                      lists: [
-                        {
-                          id: "list_1",
-                          name: "Test List"
+            try {
+              console.log('Fetching spaces for team:', CLICKUP_TEAM_ID);
+              const spacesResponse = await makeClickUpRequest(`/api/v2/team/${CLICKUP_TEAM_ID}/space`);
+              console.log('Spaces response:', JSON.stringify(spacesResponse));
+              
+              const hierarchy = {
+                teamId: CLICKUP_TEAM_ID,
+                spaces: []
+              };
+              
+              if (spacesResponse.spaces) {
+                for (const space of spacesResponse.spaces) {
+                  console.log(`Processing space: ${space.name} (${space.id})`);
+                  
+                  const spaceData = {
+                    id: space.id,
+                    name: space.name,
+                    folders: [],
+                    lists: []
+                  };
+                  
+                  // Get folders for this space
+                  try {
+                    const foldersResponse = await makeClickUpRequest(`/api/v2/space/${space.id}/folder`);
+                    console.log(`Folders for space ${space.id}:`, JSON.stringify(foldersResponse));
+                    
+                    if (foldersResponse.folders) {
+                      for (const folder of foldersResponse.folders) {
+                        const folderData = {
+                          id: folder.id,
+                          name: folder.name,
+                          lists: []
+                        };
+                        
+                        // Get lists in this folder
+                        if (folder.lists) {
+                          folderData.lists = folder.lists.map(list => ({
+                            id: list.id,
+                            name: list.name
+                          }));
                         }
-                      ]
+                        
+                        spaceData.folders.push(folderData);
+                      }
                     }
-                  ]
-                }, null, 2)
-              }]
-            };
+                  } catch (folderError) {
+                    console.error(`Error fetching folders for space ${space.id}:`, folderError);
+                  }
+                  
+                  // Get lists directly in the space (not in folders)
+                  try {
+                    const listsResponse = await makeClickUpRequest(`/api/v2/space/${space.id}/list`);
+                    console.log(`Lists for space ${space.id}:`, JSON.stringify(listsResponse));
+                    
+                    if (listsResponse.lists) {
+                      spaceData.lists = listsResponse.lists.map(list => ({
+                        id: list.id,
+                        name: list.name
+                      }));
+                    }
+                  } catch (listError) {
+                    console.error(`Error fetching lists for space ${space.id}:`, listError);
+                  }
+                  
+                  hierarchy.spaces.push(spaceData);
+                }
+              }
+              
+              result = {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify(hierarchy, null, 2)
+                }]
+              };
+            } catch (error) {
+              console.error('Error fetching workspace hierarchy:', error);
+              result = {
+                content: [{
+                  type: "text", 
+                  text: `Error fetching workspace hierarchy: ${error.message}`
+                }],
+                isError: true
+              };
+            }
             break;
             
           case "create_task":
-            result = {
-              content: [{
-                type: "text",
-                text: JSON.stringify({
-                  id: `task_${Date.now()}`,
-                  name: toolArgs.name,
-                  listId: toolArgs.listId,
-                  created: new Date().toISOString()
-                }, null, 2)
-              }]
-            };
+            try {
+              console.log('Creating task with args:', toolArgs);
+              
+              if (!toolArgs.listId || !toolArgs.name) {
+                throw new Error("listId and name are required to create a task");
+              }
+              
+              const taskData = {
+                name: toolArgs.name
+              };
+              
+              // Add optional fields if provided
+              if (toolArgs.description) taskData.description = toolArgs.description;
+              if (toolArgs.assignees) taskData.assignees = toolArgs.assignees;
+              if (toolArgs.priority) taskData.priority = toolArgs.priority;
+              if (toolArgs.dueDate) taskData.due_date = new Date(toolArgs.dueDate).getTime();
+              if (toolArgs.status) taskData.status = toolArgs.status;
+              
+              console.log('Sending task data to ClickUp:', JSON.stringify(taskData));
+              
+              const taskResponse = await makeClickUpRequest(`/api/v2/list/${toolArgs.listId}/task`, 'POST', taskData);
+              console.log('Task created:', JSON.stringify(taskResponse));
+              
+              result = {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    success: true,
+                    task: {
+                      id: taskResponse.id,
+                      name: taskResponse.name,
+                      url: taskResponse.url,
+                      status: taskResponse.status?.status,
+                      list: {
+                        id: taskResponse.list?.id,
+                        name: taskResponse.list?.name
+                      },
+                      created: new Date().toISOString()
+                    }
+                  }, null, 2)
+                }]
+              };
+            } catch (error) {
+              console.error('Error creating task:', error);
+              result = {
+                content: [{
+                  type: "text",
+                  text: `Error creating task: ${error.message}`
+                }],
+                isError: true
+              };
+            }
             break;
             
           default:
