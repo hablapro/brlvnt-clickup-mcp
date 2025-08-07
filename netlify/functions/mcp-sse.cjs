@@ -54,41 +54,74 @@ function generateSessionId() {
   return `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
 }
 
-// Available tools
+// Available tools - matching the original ClickUp MCP server
 const tools = [
   {
     name: "get_workspace_hierarchy",
-    description: "Get the complete workspace hierarchy including spaces, folders, and lists",
+    description: "Gets complete workspace hierarchy (spaces, folders, lists). No parameters needed. Returns tree structure with names and IDs for navigation.",
     inputSchema: {
       type: "object",
-      properties: {},
-      required: []
-    }
-  },
-  {
-    name: "get_workspace_summary",
-    description: "Get a human-readable summary of the workspace structure",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      required: []
+      properties: {}
     }
   },
   {
     name: "create_task",
-    description: "Create a new task in ClickUp",
+    description: "Create a new task in ClickUp with comprehensive options",
     inputSchema: {
       type: "object",
       properties: {
-        listId: { type: "string", description: "The ID of the list to create the task in" },
-        name: { type: "string", description: "The name of the task" },
-        description: { type: "string", description: "The description of the task" },
-        assignees: { type: "array", items: { type: "string" }, description: "Array of user IDs to assign" },
-        priority: { type: "integer", description: "Priority (1=Urgent, 2=High, 3=Normal, 4=Low)" },
-        dueDate: { type: "string", description: "Due date in ISO format" },
-        status: { type: "string", description: "Task status name" }
+        listId: { type: "string", description: "List ID where task will be created" },
+        name: { type: "string", description: "Task name/title" },
+        description: { type: "string", description: "Task description (markdown supported)" },
+        assignees: { 
+          type: "array", 
+          items: { type: "string" }, 
+          description: "User IDs, emails, or usernames to assign" 
+        },
+        priority: { 
+          type: "integer", 
+          description: "Priority level: 1=Urgent, 2=High, 3=Normal, 4=Low" 
+        },
+        status: { type: "string", description: "Task status name" },
+        dueDate: { type: "string", description: "Due date (ISO format or natural language)" },
+        tags: { 
+          type: "array", 
+          items: { type: "string" }, 
+          description: "Tag names to add" 
+        }
       },
       required: ["listId", "name"]
+    }
+  },
+  {
+    name: "get_task",
+    description: "Get detailed information about a specific task",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", description: "Task ID to retrieve" }
+      },
+      required: ["taskId"]
+    }
+  },
+  {
+    name: "get_workspace_tasks",
+    description: "Get tasks from workspace with filtering options",
+    inputSchema: {
+      type: "object",
+      properties: {
+        page: { type: "integer", description: "Page number for pagination" },
+        assignees: { 
+          type: "array", 
+          items: { type: "string" }, 
+          description: "Filter by assignee IDs" 
+        },
+        statuses: { 
+          type: "array", 
+          items: { type: "string" }, 
+          description: "Filter by task statuses" 
+        }
+      }
     }
   }
 ];
@@ -219,87 +252,85 @@ exports.handler = async (event, context) => {
         switch (toolName) {
           case "get_workspace_hierarchy":
             try {
-              console.log('Fetching spaces for team:', CLICKUP_TEAM_ID);
+              console.log('Fetching workspace hierarchy for team:', CLICKUP_TEAM_ID);
+              
+              // Get team info first
+              const teamResponse = await makeClickUpRequest(`/api/v2/team`);
+              const team = teamResponse.teams ? teamResponse.teams.find(t => t.id === CLICKUP_TEAM_ID) : null;
+              
+              // Build hierarchy tree like the original implementation
+              let treeOutput = '';
+              if (team) {
+                treeOutput += `📊 ${team.name} (Team: ${team.id})\n`;
+              } else {
+                treeOutput += `📊 Team Workspace (Team: ${CLICKUP_TEAM_ID})\n`;
+              }
+              
               const spacesResponse = await makeClickUpRequest(`/api/v2/team/${CLICKUP_TEAM_ID}/space`);
               console.log('Spaces response:', JSON.stringify(spacesResponse));
-              
-              const hierarchy = {
-                teamId: CLICKUP_TEAM_ID,
-                spaces: []
-              };
               
               if (spacesResponse.spaces) {
                 for (const space of spacesResponse.spaces) {
                   console.log(`Processing space: ${space.name} (${space.id})`);
-                  
-                  const spaceData = {
-                    id: space.id,
-                    name: space.name,
-                    folders: [],
-                    lists: []
-                  };
+                  treeOutput += `├── 📁 ${space.name} (Space: ${space.id})\n`;
                   
                   // Get folders for this space
                   try {
                     const foldersResponse = await makeClickUpRequest(`/api/v2/space/${space.id}/folder`);
-                    console.log(`Folders for space ${space.id}:`, JSON.stringify(foldersResponse));
                     
-                    if (foldersResponse.folders) {
-                      for (const folder of foldersResponse.folders) {
-                        const folderData = {
-                          id: folder.id,
-                          name: folder.name,
-                          lists: []
-                        };
+                    if (foldersResponse.folders && foldersResponse.folders.length > 0) {
+                      for (let i = 0; i < foldersResponse.folders.length; i++) {
+                        const folder = foldersResponse.folders[i];
+                        const isLastFolder = i === foldersResponse.folders.length - 1;
+                        const folderPrefix = isLastFolder ? '└──' : '├──';
+                        
+                        treeOutput += `│   ${folderPrefix} 📂 ${folder.name} (Folder: ${folder.id})\n`;
                         
                         // Get lists in this folder
-                        if (folder.lists) {
-                          folderData.lists = folder.lists.map(list => ({
-                            id: list.id,
-                            name: list.name
-                          }));
+                        if (folder.lists && folder.lists.length > 0) {
+                          for (let j = 0; j < folder.lists.length; j++) {
+                            const list = folder.lists[j];
+                            const isLastList = j === folder.lists.length - 1;
+                            const listPrefix = isLastList ? '└──' : '├──';
+                            const indent = isLastFolder ? '    ' : '│   ';
+                            
+                            treeOutput += `${indent}${listPrefix} 📋 ${list.name} (List: ${list.id})\n`;
+                          }
                         }
-                        
-                        spaceData.folders.push(folderData);
                       }
                     }
                   } catch (folderError) {
                     console.error(`Error fetching folders for space ${space.id}:`, folderError);
+                    treeOutput += `│   ⚠️ Error loading folders\n`;
                   }
                   
                   // Get lists directly in the space (not in folders)
                   try {
                     const listsResponse = await makeClickUpRequest(`/api/v2/space/${space.id}/list`);
-                    console.log(`Lists for space ${space.id}:`, JSON.stringify(listsResponse));
                     
-                    if (listsResponse.lists) {
-                      spaceData.lists = listsResponse.lists.map(list => ({
-                        id: list.id,
-                        name: list.name
-                      }));
+                    if (listsResponse.lists && listsResponse.lists.length > 0) {
+                      for (let i = 0; i < listsResponse.lists.length; i++) {
+                        const list = listsResponse.lists[i];
+                        const isLast = i === listsResponse.lists.length - 1;
+                        const listPrefix = isLast ? '└──' : '├──';
+                        
+                        treeOutput += `│   ${listPrefix} 📋 ${list.name} (List: ${list.id})\n`;
+                      }
                     }
                   } catch (listError) {
                     console.error(`Error fetching lists for space ${space.id}:`, listError);
+                    treeOutput += `│   ⚠️ Error loading lists\n`;
                   }
-                  
-                  hierarchy.spaces.push(spaceData);
                 }
               }
               
               result = {
-                content: [{
-                  type: "text",
-                  text: JSON.stringify(hierarchy, null, 2)
-                }]
+                hierarchy: treeOutput
               };
             } catch (error) {
               console.error('Error fetching workspace hierarchy:', error);
               result = {
-                content: [{
-                  type: "text", 
-                  text: `Error fetching workspace hierarchy: ${error.message}`
-                }],
-                isError: true
+                error: `Error getting workspace hierarchy: ${error.message}`
               };
             }
             break;
@@ -376,6 +407,54 @@ exports.handler = async (event, context) => {
                   text: `Error generating workspace summary: ${error.message}`
                 }],
                 isError: true
+              };
+            }
+            break;
+            
+          case "get_task":
+            try {
+              const taskId = toolArgs.taskId;
+              if (!taskId) {
+                throw new Error("taskId is required");
+              }
+              
+              console.log('Getting task:', taskId);
+              const taskResponse = await makeClickUpRequest(`/api/v2/task/${taskId}`);
+              
+              result = taskResponse;
+            } catch (error) {
+              console.error('Error getting task:', error);
+              result = {
+                error: `Error getting task: ${error.message}`
+              };
+            }
+            break;
+            
+          case "get_workspace_tasks":
+            try {
+              console.log('Getting workspace tasks with args:', toolArgs);
+              
+              let url = `/api/v2/team/${CLICKUP_TEAM_ID}/task`;
+              const params = new URLSearchParams();
+              
+              if (toolArgs.page) params.append('page', toolArgs.page);
+              if (toolArgs.assignees && toolArgs.assignees.length > 0) {
+                params.append('assignees[]', toolArgs.assignees.join(','));
+              }
+              if (toolArgs.statuses && toolArgs.statuses.length > 0) {
+                params.append('statuses[]', toolArgs.statuses.join(','));
+              }
+              
+              if (params.toString()) {
+                url += '?' + params.toString();
+              }
+              
+              const tasksResponse = await makeClickUpRequest(url);
+              result = tasksResponse;
+            } catch (error) {
+              console.error('Error getting workspace tasks:', error);
+              result = {
+                error: `Error getting workspace tasks: ${error.message}`
               };
             }
             break;

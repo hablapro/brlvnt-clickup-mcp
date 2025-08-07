@@ -15,7 +15,7 @@
 # Redirects for MCP endpoints
 [[redirects]]
   from = "/mcp"
-  to = "/.netlify/functions/mcp-simple"
+  to = "/.netlify/functions/mcp-sse"
   status = 200
   force = true
 
