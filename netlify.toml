@@ -61,6 +61,12 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/clickup-tool"
+  to = "/.netlify/functions/clickup-tool"
+  status = 200
+  force = true
+
 # Headers for security and CORS
 [[headers]]
   for = "/*"
